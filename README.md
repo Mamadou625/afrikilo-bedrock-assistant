@@ -13,6 +13,10 @@ POST /ask  {"question": "AfriKilo est-il gratuit ?"}
  "usage": {"inputTokens": 2712, "outputTokens": 36, "totalTokens": 2748}}
 ```
 
+| Answers in the user's language | Says so when the FAQ has no answer |
+|---|---|
+| ![French and English questions answered from the FAQ](docs/screenshots/chat-fr-en.png) | ![Lost parcel question: no invented refund policy, points to support](docs/screenshots/chat-not-in-faq.png) |
+
 ## Architecture
 
 ```mermaid
