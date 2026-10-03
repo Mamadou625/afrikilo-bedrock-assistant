@@ -1,0 +1,130 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>AfriKilo Assistant</title>
+<style>
+  :root {
+    --bg: #f6f7f9; --card: #ffffff; --text: #1d2330; --muted: #6b7280;
+    --border: #e3e6eb; --accent: #0f7b5f; --accent-text: #ffffff;
+    --user: #e7f4ef; --blocked: #fff6e0; --error: #fdecec;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #12151b; --card: #1b2029; --text: #e7e9ee; --muted: #9aa3b2;
+      --border: #2c3340; --accent: #2bb38a; --accent-text: #0b1210;
+      --user: #1d3a31; --blocked: #3a3220; --error: #3e2224;
+    }
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; background: var(--bg); color: var(--text);
+    font: 16px/1.5 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  }
+  main { max-width: 720px; margin: 0 auto; padding: 24px 16px; display: flex; flex-direction: column; gap: 16px; min-height: 100vh; }
+  header h1 { margin: 0; font-size: 1.4rem; }
+  header p { margin: 4px 0 0; color: var(--muted); font-size: .95rem; }
+  details { background: var(--card); border: 1px solid var(--border); border-radius: 10px; padding: 10px 14px; }
+  details summary { cursor: pointer; color: var(--muted); font-size: .9rem; }
+  details input { width: 100%; margin-top: 8px; }
+  #chat { flex: 1; display: flex; flex-direction: column; gap: 10px; }
+  .msg { padding: 10px 14px; border-radius: 12px; border: 1px solid var(--border); background: var(--card); max-width: 90%; white-space: pre-wrap; overflow-wrap: anywhere; }
+  .msg.user { align-self: flex-end; background: var(--user); }
+  .msg.blocked { background: var(--blocked); }
+  .msg.error { background: var(--error); }
+  .meta { display: block; margin-top: 6px; font-size: .78rem; color: var(--muted); }
+  .examples { display: flex; flex-wrap: wrap; gap: 8px; }
+  .examples button { background: var(--card); color: var(--text); border: 1px solid var(--border); border-radius: 999px; padding: 6px 12px; font-size: .85rem; cursor: pointer; }
+  form { display: flex; gap: 8px; position: sticky; bottom: 0; background: var(--bg); padding: 8px 0; }
+  input { flex: 1; min-width: 0; padding: 10px 12px; border-radius: 10px; border: 1px solid var(--border); background: var(--card); color: var(--text); font: inherit; }
+  form button { padding: 10px 18px; border: 0; border-radius: 10px; background: var(--accent); color: var(--accent-text); font: inherit; font-weight: 600; cursor: pointer; }
+  form button:disabled { opacity: .6; cursor: wait; }
+</style>
+</head>
+<body>
+<main>
+  <header>
+    <h1>AfriKilo Assistant</h1>
+    <p>Posez une question sur AfriKilo, en français ou en anglais. / Ask a question about AfriKilo, in French or English.</p>
+  </header>
+
+  <details id="settings">
+    <summary>API URL</summary>
+    <input id="api" placeholder="https://xxxx.execute-api.us-east-1.amazonaws.com" autocomplete="off">
+  </details>
+
+  <div class="examples">
+    <button type="button">AfriKilo est-il gratuit ?</button>
+    <button type="button">Which cities are covered?</button>
+    <button type="button">Quels objets sont interdits ?</button>
+    <button type="button">How do I contact a traveler?</button>
+    <button type="button">Mon colis est perdu, suis-je remboursé ?</button>
+  </div>
+
+  <div id="chat" aria-live="polite"></div>
+
+  <form id="form">
+    <input id="q" placeholder="Votre question / Your question" autocomplete="off" required maxlength="500">
+    <button id="send">Envoyer</button>
+  </form>
+</main>
+<script>
+  const api = document.getElementById("api");
+  const chat = document.getElementById("chat");
+  const q = document.getElementById("q");
+  const send = document.getElementById("send");
+
+  // The API URL is not hard-coded so it never ends up in the public repo.
+  // Use ?api=https://... in the link, or paste it in the "API URL" field.
+  const fromQuery = new URLSearchParams(location.search).get("api");
+  try { api.value = fromQuery || localStorage.getItem("afrikilo-api") || ""; } catch (e) { api.value = fromQuery || ""; }
+  if (!api.value) document.getElementById("settings").open = true;
+  api.addEventListener("change", () => { try { localStorage.setItem("afrikilo-api", api.value.trim()); } catch (e) {} });
+
+  function add(text, cls, meta) {
+    const div = document.createElement("div");
+    div.className = "msg " + cls;
+    div.textContent = text;
+    if (meta) { const m = document.createElement("span"); m.className = "meta"; m.textContent = meta; div.appendChild(m); }
+    chat.appendChild(div);
+    div.scrollIntoView({ behavior: "smooth", block: "end" });
+    return div;
+  }
+
+  async function ask(question) {
+    const base = api.value.trim().replace(/\/+$/, "");
+    if (!base) { document.getElementById("settings").open = true; api.focus(); return; }
+    add(question, "user");
+    const pending = add("…", "bot");
+    send.disabled = true;
+    try {
+      const res = await fetch(base + "/ask", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ question }),
+      });
+      const data = await res.json();
+      pending.remove();
+      if (!res.ok) { add(data.error || data.message || "Error " + res.status, "error"); return; }
+      const u = data.usage || {};
+      const meta = data.blocked ? "Blocked by guardrail" : `Tokens: ${u.inputTokens} in / ${u.outputTokens} out`;
+      add(data.answer, data.blocked ? "blocked" : "bot", meta);
+    } catch (e) {
+      pending.remove();
+      add("Could not reach the API. Check the URL and that CORS is enabled. (" + e.message + ")", "error");
+    } finally {
+      send.disabled = false;
+      q.focus();
+    }
+  }
+
+  document.getElementById("form").addEventListener("submit", (e) => {
+    e.preventDefault();
+    const text = q.value.trim();
+    if (text) { q.value = ""; ask(text); }
+  });
+  document.querySelectorAll(".examples button").forEach((b) => b.addEventListener("click", () => ask(b.textContent)));
+</script>
+</body>
+</html>

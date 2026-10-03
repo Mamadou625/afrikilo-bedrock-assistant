@@ -1,0 +1,12 @@
+# Exports of the manual build (contain the AWS account ID)
+docs/manual-build/
+
+# Terraform
+.terraform/
+*.tfstate
+*.tfstate.*
+*.tfplan
+crash.log
+*.tfvars
+!example.tfvars
+build/
